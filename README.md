@@ -47,18 +47,18 @@ The API uses a recursive JSON logic engine to satisfy the requirement for **Dyna
 {
   "operator": "and",
   "conditions": [
-    { "field": "timestamp__year", "op": "eq", "value": 2024 }
+    { "field": "timestamp__year", "op": "eq", "value": 2025 }
   ]
 }
 ```
 
 ### Example 2: Complex Nested Logic
-**Goal:** "Show me views from 2024 **AND** (views from US **OR** views from Ethiopia)."
+**Goal:** "Show me views from 2025 **AND** (views from US **OR** views from Ethiopia)."
 ```json
 {
   "operator": "and",
   "conditions": [
-    { "field": "timestamp__year", "op": "eq", "value": 2024 },
+    { "field": "timestamp__year", "op": "eq", "value": 2025 },
     {
       "operator": "or",  
       "conditions": [
@@ -79,7 +79,7 @@ Below are the Curl commands to test the specific assessment requirements.
 ### 1. Grouped Analytics
 **Endpoint:** `POST /api/analytics/blog-views/{object_type}/`
 **Params:** `object_type` = `country` or `user`
-**Goal:** Group views by Country (or User) for the year 2023.
+**Goal:** Group views by Country (or User) for the year 2025.
 
 **CURL Command:**
 ```bash
@@ -88,7 +88,7 @@ curl -X POST http://localhost:8000/api/analytics/blog-views/country/ \
 -d '{
   "operator": "and",
   "conditions": [
-    { "field": "timestamp__year", "op": "gte", "value": 2023 }
+    { "field": "timestamp__year", "op": "gte", "value": 2025 }
   ]
 }'
 ```
@@ -120,7 +120,7 @@ curl -X POST "http://localhost:8000/api/analytics/performance/?compare=month" \
 -d '{
   "operator": "and",
   "conditions": [
-    { "field": "timestamp__year", "op": "eq", "value": 2023 }
+    { "field": "timestamp__year", "op": "eq", "value": 2025 }
   ]
 }'
 ```
