@@ -1,0 +1,11 @@
+Django>=4.2,<5.0
+djangorestframework
+djangorestframework-simplejwt  # JD Requirement
+django-filter
+drf-yasg                       # JD Requirement
+django-redis                   # JD Requirement
+redis
+psycopg2-binary
+gunicorn
+Faker
+dj-database-url                         # For Seeding
