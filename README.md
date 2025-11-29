@@ -37,6 +37,84 @@ The project is fully containerized. You only need Docker installed.
 
 ---
 
+## 📡 API Reference & Testing
+
+All endpoints accept a **POST** request with a dynamic filter payload. Below are the request bodies to test the specific requirements.
+
+### 1. Grouped Analytics
+**Endpoint:** `POST /api/analytics/blog-views/{object_type}/`
+**Params:** `object_type` = `country` or `user`
+**Goal:** Group views by Country (or User) for the year 2023.
+
+**Request Body:**
+```json
+{
+  "operator": "and",
+  "conditions": [
+    { "field": "timestamp__year", "op": "gte", "value": 2023 }
+  ]
+}
+```
+
+**CURL Command:**
+```bash
+curl -X POST http://localhost:8000/api/analytics/blog-views/country/ \
+-H "Content-Type: application/json" \
+-d '{ "operator": "and", "conditions": [ { "field": "timestamp__year", "op": "gte", "value": 2023 } ] }'
+```
+
+---
+
+### 2. Top Performers
+**Endpoint:** `POST /api/analytics/top/{top_type}/`
+**Params:** `top_type` = `blog`, `user`, or `country`
+**Goal:** Get the Top 10 Blogs based on total views (no filters applied).
+
+**Request Body:**
+```json
+{
+  "operator": "and",
+  "conditions": []
+}
+```
+
+**CURL Command:**
+```bash
+curl -X POST http://localhost:8000/api/analytics/top/blog/ \
+-H "Content-Type: application/json" \
+-d '{ "operator": "and", "conditions": [] }'
+```
+
+---
+
+### 3. Time-Series Performance
+**Endpoint:** `POST /api/analytics/performance/`
+**Query Param:** `?compare=month` (or `week`, `day`, `year`)
+**Goal:** Show monthly growth trends for the current year.
+
+**Request Body:**
+```json
+{
+  "operator": "and",
+  "conditions": [
+    { "field": "timestamp__year", "op": "eq", "value": 2023 }
+  ]
+}
+```
+
+**CURL Command:**
+```bash
+curl -X POST "http://localhost:8000/api/analytics/performance/?compare=month" \
+-H "Content-Type: application/json" \
+-d '{ "operator": "and", "conditions": [ { "field": "timestamp__year", "op": "eq", "value": 2023 } ] }'
+```
+
+---
+
+
+
+
+
 ## 🏗 Architecture & Design Decisions
 
 ### 1. Database Optimization (PostgreSQL)
