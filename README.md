@@ -37,76 +37,92 @@ The project is fully containerized. You only need Docker installed.
 
 ---
 
+## 💡 Understanding the Filter Syntax
+
+The API uses a recursive JSON logic engine to satisfy the requirement for **Dynamic `AND/OR/NOT` Filtering**.
+
+### Example 1: Simple Filter
+**Goal:** "Show me views from the year 2024."
+```json
+{
+  "operator": "and",
+  "conditions": [
+    { "field": "timestamp__year", "op": "eq", "value": 2024 }
+  ]
+}
+```
+
+### Example 2: Complex Nested Logic
+**Goal:** "Show me views from 2024 **AND** (views from US **OR** views from Ethiopia)."
+```json
+{
+  "operator": "and",
+  "conditions": [
+    { "field": "timestamp__year", "op": "eq", "value": 2024 },
+    {
+      "operator": "or",  
+      "conditions": [
+        { "field": "country", "op": "eq", "value": "US" },
+        { "field": "country", "op": "eq", "value": "ET" }
+      ]
+    }
+  ]
+}
+```
+
+---
+
 ## 📡 API Reference & Testing
 
-All endpoints accept a **POST** request with a dynamic filter payload. Below are the request bodies to test the specific requirements.
+Below are the Curl commands to test the specific assessment requirements.
 
 ### 1. Grouped Analytics
 **Endpoint:** `POST /api/analytics/blog-views/{object_type}/`
 **Params:** `object_type` = `country` or `user`
 **Goal:** Group views by Country (or User) for the year 2023.
 
-**Request Body:**
-```json
-{
-  "operator": "and",
-  "conditions": [
-    { "field": "timestamp__year", "op": "gte", "value": 2023 }
-  ]
-}
-```
-
 **CURL Command:**
 ```bash
 curl -X POST http://localhost:8000/api/analytics/blog-views/country/ \
 -H "Content-Type: application/json" \
--d '{ "operator": "and", "conditions": [ { "field": "timestamp__year", "op": "gte", "value": 2023 } ] }'
+-d '{
+  "operator": "and",
+  "conditions": [
+    { "field": "timestamp__year", "op": "gte", "value": 2023 }
+  ]
+}'
 ```
-
----
 
 ### 2. Top Performers
 **Endpoint:** `POST /api/analytics/top/{top_type}/`
 **Params:** `top_type` = `blog`, `user`, or `country`
 **Goal:** Get the Top 10 Blogs based on total views (no filters applied).
 
-**Request Body:**
-```json
-{
-  "operator": "and",
-  "conditions": []
-}
-```
-
 **CURL Command:**
 ```bash
 curl -X POST http://localhost:8000/api/analytics/top/blog/ \
 -H "Content-Type: application/json" \
--d '{ "operator": "and", "conditions": [] }'
+-d '{
+  "operator": "and",
+  "conditions": []
+}'
 ```
-
----
 
 ### 3. Time-Series Performance
 **Endpoint:** `POST /api/analytics/performance/`
 **Query Param:** `?compare=month` (or `week`, `day`, `year`)
 **Goal:** Show monthly growth trends for the current year.
 
-**Request Body:**
-```json
-{
-  "operator": "and",
-  "conditions": [
-    { "field": "timestamp__year", "op": "eq", "value": 2023 }
-  ]
-}
-```
-
 **CURL Command:**
 ```bash
 curl -X POST "http://localhost:8000/api/analytics/performance/?compare=month" \
 -H "Content-Type: application/json" \
--d '{ "operator": "and", "conditions": [ { "field": "timestamp__year", "op": "eq", "value": 2023 } ] }'
+-d '{
+  "operator": "and",
+  "conditions": [
+    { "field": "timestamp__year", "op": "eq", "value": 2023 }
+  ]
+}'
 ```
 
 ---
