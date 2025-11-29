@@ -63,6 +63,10 @@ The project is fully containerized. You only need Docker installed.
     *   JWT Endpoints exist at `/api/token/`.
     *   **Note:** To make the assessment easier to review/test, the Views are currently set to `AllowAny`. In a production environment, I would switch the permission class to `IsAuthenticated`.
 
+
+### 5. Infrastructure Strategy
+*   **Development:** The database is containerized via Docker Compose for rapid setup and reproducibility. Data persistence is handled via Docker Volumes.
+*   **Production:** In a real-world deployment, I would **decouple** the database from the Docker cluster. I would utilize a managed service (e.g., **AWS RDS for PostgreSQL** or **Azure Database**) to ensure automated backups, high availability, and independent scaling.
 ---
 
 ## 🛠 Tech Stack
