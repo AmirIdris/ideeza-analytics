@@ -105,7 +105,7 @@ curl -X POST http://localhost:8000/api/analytics/top/blog/ \
 ```json
 {
   "year": 2023,
-  "compare_period": "week"
+  
 }
 ```
 
