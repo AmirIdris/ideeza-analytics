@@ -31,7 +31,7 @@ make migrate
 This command generates Users, Blogs, and **10,000+ View records** distributed over the last year to simulate a production environment. **The APIs will return empty lists without this step.**
 ```bash
 make seed
-
+```
 
 4. **Access Documentation:**
    * **Swagger UI:** [http://localhost:8000/swagger/](http://localhost:8000/swagger/)
