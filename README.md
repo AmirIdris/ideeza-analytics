@@ -1,35 +1,37 @@
 This repository contains the solution for the Senior Backend Developer assessment. It implements a high-performance Analytics API using Django, PostgreSQL, and Redis.
 
+## ⚠️ Important Update: Schema Refactor
+
+**If you have run this project previously, you MUST reset your database.**
+I have normalized the database schema (migrating `Country` from a string to a relational model) based on code review feedback.
+
+**Run this to reset:**
+```bash
+docker-compose down -v  # Deletes the old volume
+docker-compose exec web python manage.py migrate
+docker-compose exec web python manage.py seed_data
+```
+
 ## 🚀 Quick Start
 
 The project is fully containerized. You only need Docker installed.
 
-1. **Build the containers:**
-   ```bash
-   docker-compose build
-   ```
+### 1. Start the Infrastructure
+```bash
+make up
+# Or: docker-compose up -d --build
+```
 
-2. **Start the Infrastructure:**
-   ```bash
-   docker-compose up -d
-   ```
+### 2. Apply Migrations
+```bash
+make migrate
+```
 
-3. **Apply Migrations:**
-   ```bash
-   docker-compose exec web python manage.py migrate
-   ```
+### 3. 🌱 Seed Mock Data (Crucial)
+This command generates Users, Blogs, and **10,000+ View records** distributed over the last year to simulate a production environment. **The APIs will return empty lists without this step.**
+```bash
+make seed
 
-4. **🌱 Seed Mock Data (Crucial):**
-   This command generates Users, Blogs, and **10,000+ View records** distributed over the last year to simulate a production environment.
-   ```bash
-   docker-compose exec web python manage.py seed_data
-   ```
-
-### Other Useful Commands:
-- **View logs:** `docker-compose logs -f`
-- **Stop containers:** `docker-compose down`
-- **Run tests:** `docker-compose exec web python manage.py test`
-- **Django shell:** `docker-compose exec web python manage.py shell`
 
 4. **Access Documentation:**
    * **Swagger UI:** [http://localhost:8000/swagger/](http://localhost:8000/swagger/)
@@ -37,92 +39,81 @@ The project is fully containerized. You only need Docker installed.
 
 ---
 
-## 💡 Understanding the Filter Syntax
-
-The API uses a recursive JSON logic engine to satisfy the requirement for **Dynamic `AND/OR/NOT` Filtering**.
-
-### Example 1: Simple Filter
-**Goal:** "Show me views from the year 2024."
-```json
-{
-  "operator": "and",
-  "conditions": [
-    { "field": "timestamp__year", "op": "eq", "value": 2025 }
-  ]
-}
-```
-
-### Example 2: Complex Nested Logic
-**Goal:** "Show me views from 2025 **AND** (views from US **OR** views from Ethiopia)."
-```json
-{
-  "operator": "and",
-  "conditions": [
-    { "field": "timestamp__year", "op": "eq", "value": 2025 },
-    {
-      "operator": "or",  
-      "conditions": [
-        { "field": "country", "op": "eq", "value": "US" },
-        { "field": "country", "op": "eq", "value": "ET" }
-      ]
-    }
-  ]
-}
-```
-
 ---
 
 ## 📡 API Reference & Testing
 
-Below are the Curl commands to test the specific assessment requirements.
+All endpoints accept a **POST** request with a filter payload. The filters use **Explicit Typing** to ensure security and readability.
+
+### Filter Parameters Table
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `start_date` / `end_date` | Date | Filter by range. |
+| `year` | Int | Filter by specific year (e.g., 2024). |
+| `country_codes` | List[Str] | **OR Logic:** Include views from these countries (e.g., `["US", "ET"]`). |
+| `exclude_country_codes` | List[Str] | **NOT Logic:** Exclude views from these countries. |
+| `author_username` | Str | Filter by specific author. |
+
+---
 
 ### 1. Grouped Analytics
 **Endpoint:** `POST /api/analytics/blog-views/{object_type}/`
 **Params:** `object_type` = `country` or `user`
-**Goal:** Group views by Country (or User) for the year 2025.
+**Goal:** Group views by Country, excluding the US.
+
+**Request Body:**
+```json
+{
+  "year": 2024,
+  "exclude_country_codes": ["US"]
+}
+```
 
 **CURL Command:**
 ```bash
 curl -X POST http://localhost:8000/api/analytics/blog-views/country/ \
 -H "Content-Type: application/json" \
--d '{
-  "operator": "and",
-  "conditions": [
-    { "field": "timestamp__year", "op": "gte", "value": 2025 }
-  ]
-}'
+-d '{ "year": 2024, "exclude_country_codes": ["US"] }'
 ```
+
+---
 
 ### 2. Top Performers
 **Endpoint:** `POST /api/analytics/top/{top_type}/`
 **Params:** `top_type` = `blog`, `user`, or `country`
-**Goal:** Get the Top 10 Blogs based on total views (no filters applied).
+**Goal:** Get Top 10 Blogs (No filters).
+
+**Request Body:**
+```json
+{} 
+```
 
 **CURL Command:**
 ```bash
 curl -X POST http://localhost:8000/api/analytics/top/blog/ \
 -H "Content-Type: application/json" \
--d '{
-  "operator": "and",
-  "conditions": []
-}'
+-d '{}'
 ```
+
+---
 
 ### 3. Time-Series Performance
 **Endpoint:** `POST /api/analytics/performance/`
-**Query Param:** `?compare=month` (or `week`, `day`, `year`)
-**Goal:** Show monthly growth trends for the current year.
+**Goal:** Show weekly growth trends (Forcing `week` granularity to meet requirement).
+
+**Request Body:**
+```json
+{
+  "year": 2023,
+  "compare_period": "week"
+}
+```
 
 **CURL Command:**
 ```bash
-curl -X POST "http://localhost:8000/api/analytics/performance/?compare=month" \
+curl -X POST http://localhost:8000/api/analytics/performance/ \
 -H "Content-Type: application/json" \
--d '{
-  "operator": "and",
-  "conditions": [
-    { "field": "timestamp__year", "op": "eq", "value": 2025 }
-  ]
-}'
+-d '{ "year": 2023, "compare_period": "week" }'
 ```
 
 ---
@@ -145,12 +136,6 @@ curl -X POST "http://localhost:8000/api/analytics/performance/?compare=month" \
     *   Heavy aggregation results are cached for **15 minutes**.
     *   This reduces API response time from ~200ms (uncached) to <10ms (cached).
 
-### 3. Dynamic Filter Engine
-*   **Requirement:** Support complex `AND/OR/NOT` logic.
-*   **Solution:** Implemented a **Recursive Query Builder** (`DynamicFilterBuilder`).
-    *   It recursively parses JSON payloads to construct complex Django `Q` objects.
-    *   **Security:** Includes strict field whitelisting to prevent users from filtering on sensitive fields (e.g., `author__password`).
-
 ### 4. Authentication & Security (JWT)
 *   **Context:** The Job Description requested `SimpleJWT`, but the Assessment Requirements focused on public analytics data.
 *   **Decision:** I have fully configured `rest_framework_simplejwt`.
@@ -162,6 +147,23 @@ curl -X POST "http://localhost:8000/api/analytics/performance/?compare=month" \
 *   **Development:** The database is containerized via Docker Compose for rapid setup and reproducibility. Data persistence is handled via Docker Volumes.
 *   **Production:** In a real-world deployment, I would **decouple** the database from the Docker cluster. I would utilize a managed service (e.g., **AWS RDS for PostgreSQL** or **Azure Database**) to ensure automated backups, high availability, and independent scaling.
 ---
+
+## 🏗 Refactoring & Design Decisions
+
+Based on feedback, I performed a significant refactor to prioritize **Readability, Standardization, and Security**.
+
+### 1. Simplification ("Problem Solver" Approach)
+*   **Removed Complexity:** I replaced the custom Recursive Query Builder with a standard, explicit service layer. This significantly improves code readability and maintainability for the team.
+*   **Auto-Granularity:** Instead of relying on user input for time-series granularity (which risks performance issues), the system now **auto-calculates** the optimal period (Day/Week/Month) based on the date range.
+
+### 2. Security & Validation
+*   **Strict Serialization:** Replaced generic dictionary inputs with a typed `AnalyticsFilterSerializer`. This validates every field (`year`, `country_codes`) and prevents Logic/SQL Injection.
+*   **Schema Normalization:** Migrated from raw string storage to a relational `Country` model (Foreign Key) to ensure Data Integrity (3NF).
+
+### 3. Performance
+*   **Indexing:** Added Composite Indexes `(timestamp)` and `(blog, timestamp)` to the `BlogView` model.
+*   **Redis Caching:** Heavy aggregation results are cached for 15 minutes. Cache keys are deterministically generated based on the filter payload.
+
 
 ## 🛠 Tech Stack
 

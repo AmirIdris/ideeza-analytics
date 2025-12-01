@@ -8,7 +8,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from analytics.services import AnalyticsService
-from analytics.api.serializers import FilterPayloadSerializer, AnalyticsResponseSerializer
+from analytics.api.serializers import  AnalyticsResponseSerializer, AnalyticsFilterSerializer
 
 class BaseAnalyticsView(APIView):
     """
@@ -21,57 +21,37 @@ class BaseAnalyticsView(APIView):
 
 class GroupedAnalyticsView(BaseAnalyticsView):
     
-    @swagger_auto_schema(
-        operation_summary="Get Grouped Analytics (API #1)",
-        operation_description="Group blogs and views by Object Type (country or user).",
-        request_body=FilterPayloadSerializer,
-        responses={200: AnalyticsResponseSerializer(many=True)},
-        manual_parameters=[
-            openapi.Parameter('object_type', openapi.IN_PATH, description="country OR user", type=openapi.TYPE_STRING)
-        ]
-    )
+    @swagger_auto_schema(request_body=AnalyticsFilterSerializer)
     def post(self, request, object_type):
+        serializer = AnalyticsFilterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         if object_type not in ['country', 'user']:
             return Response({"error": "Invalid object_type"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        filters = request.data
-        data = AnalyticsService.get_grouped_analytics(object_type, filters)
+        data = AnalyticsService.get_grouped_analytics(object_type, serializer.validated_data)
         return Response(data, status=status.HTTP_200_OK)
 
 
 class TopAnalyticsView(BaseAnalyticsView):
 
-    @swagger_auto_schema(
-        operation_summary="Get Top Performers (API #2)",
-        operation_description="Returns Top 10 users, countries, or blogs based on views.",
-        request_body=FilterPayloadSerializer,
-        responses={200: AnalyticsResponseSerializer(many=True)},
-        manual_parameters=[
-            openapi.Parameter('top_type', openapi.IN_PATH, description="blog, country, or user", type=openapi.TYPE_STRING)
-        ]
-    )
+    @swagger_auto_schema(request_body=AnalyticsFilterSerializer)
     def post(self, request, top_type):
+        serializer = AnalyticsFilterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         if top_type not in ['blog', 'country', 'user']:
             return Response({"error": "Invalid top_type"}, status=status.HTTP_400_BAD_REQUEST)
 
-        filters = request.data
-        data = AnalyticsService.get_top_analytics(top_type, filters)
+        data = AnalyticsService.get_top_analytics(top_type, serializer.validated_data)
         return Response(data, status=status.HTTP_200_OK)
 
 
 class PerformanceAnalyticsView(BaseAnalyticsView):
 
     @swagger_auto_schema(
-        operation_summary="Get Time-Series Performance (API #3)",
-        operation_description="Shows views and growth % over time.",
-        request_body=FilterPayloadSerializer,
-        responses={200: AnalyticsResponseSerializer(many=True)},
-        manual_parameters=[
-            openapi.Parameter('compare', openapi.IN_QUERY, description="Period: month, week, day, year", type=openapi.TYPE_STRING, default='month')
-        ]
+        operation_description="Granularity is auto-calculated",
+        request_body=AnalyticsFilterSerializer
     )
     def post(self, request):
-        period = request.query_params.get('compare', 'month')
-        filters = request.data
-        data = AnalyticsService.get_performance_analytics(period, filters)
+        serializer = AnalyticsFilterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = AnalyticsService.get_performance_analytics(serializer.validated_data)
         return Response(data, status=status.HTTP_200_OK)

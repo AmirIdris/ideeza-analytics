@@ -3,6 +3,18 @@ from django.contrib.auth.models import User
 from django.utils.translation import gettext_lazy as _
 
 # Create your models here.
+
+
+
+class Country(models.Model):
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=5, unique=True, db_index=True)
+
+    def __str__(self):
+        return self.code
+
+
+
 class Blog(models.Model):
     title = models.CharField(max_length=255)
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='blogs')
@@ -20,8 +32,8 @@ class BlogView(models.Model):
     """
     blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='views')
     
-    # We store country codes (e.g., 'US', 'ET') directly for fast grouping
-    country = models.CharField(max_length=5, db_index=True)
+    # NORMALIZED: Linking to Country table instead of storing raw string
+    country = models.ForeignKey(Country, on_delete=models.SET_NULL, null=True, related_name='views')
     
     # IP is useful for uniqueness checks, though not strictly required by the prompt's x,y,z
     ip_address = models.GenericIPAddressField(null=True, blank=True)
