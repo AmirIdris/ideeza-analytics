@@ -33,9 +33,10 @@ This command generates Users, Blogs, and **10,000+ View records** distributed ov
 make seed
 ```
 
-4. **Access Documentation:**
-   * **Swagger UI:** [http://localhost:8000/swagger/](http://localhost:8000/swagger/)
-   * **API Root:** [http://localhost:8000/api/analytics/](http://localhost:8000/api/analytics/)
+### 4. Access Documentation
+
+* **Swagger UI:** [http://localhost:8000/swagger/](http://localhost:8000/swagger/)
+* **API Root:** [http://localhost:8000/api/analytics/](http://localhost:8000/api/analytics/)
 
 ---
 
@@ -48,6 +49,7 @@ All endpoints accept a **POST** request with a filter payload. The filters use *
 ### Filter Parameters Table
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
+| `range` | Str | **Quick Range:** `day`, `week`, `month`, or `year`. Auto-calculates start_date/end_date. |
 | `start_date` / `end_date` | Date | Filter by range. |
 | `year` | Int | Filter by specific year (e.g., 2024). |
 | `country_codes` | List[Str] | **OR Logic:** Include views from these countries (e.g., `["US", "ET"]`). |
@@ -99,13 +101,13 @@ curl -X POST http://localhost:8000/api/analytics/top/blog/ \
 
 ### 3. Time-Series Performance
 **Endpoint:** `POST /api/analytics/performance/`
-**Goal:** Show weekly growth trends (Forcing `week` granularity to meet requirement).
+**Goal:** Show time-series performance with growth trends.
 
 **Request Body:**
 ```json
 {
-  "year": 2023,
-  
+  "year": 2025,
+  "range": "week"
 }
 ```
 
@@ -113,7 +115,7 @@ curl -X POST http://localhost:8000/api/analytics/top/blog/ \
 ```bash
 curl -X POST http://localhost:8000/api/analytics/performance/ \
 -H "Content-Type: application/json" \
--d '{ "year": 2023, "compare_period": "week" }'
+-d '{ "year": 2025, "range": "week" }'
 ```
 
 ---
@@ -125,44 +127,23 @@ curl -X POST http://localhost:8000/api/analytics/performance/ \
 ## 🏗 Architecture & Design Decisions
 
 ### 1. Database Optimization (PostgreSQL)
-*   **Schema Design:** Used a Star Schema-lite approach. `BlogView` acts as the Fact table.
-*   **Indexing:** Added Composite Indexes `(timestamp, country)` and `(blog, timestamp)` to the `BlogView` model. This ensures that filtering by time range and grouping by country remains `O(log n)` rather than a full table scan `O(n)`.
-*   **Aggregation:** Leveraged Django ORM's `values()` and `annotate()` to perform `GROUP BY` operations at the database level, preventing N+1 query issues.
+*   **Schema Design:** Star Schema approach with `BlogView` as the Fact table, normalized with `Country` model (3NF).
+*   **Indexing:** Composite indexes on `(timestamp, country)` and `(blog, timestamp)` ensure O(log n) filtering performance.
+*   **Query Optimization:** Using `select_related()` to prevent N+1 queries and Django ORM's `values()` + `annotate()` for efficient aggregations at the database level.
 
 ### 2. Caching Strategy (Redis)
-*   **Problem:** Analytics queries involving `COUNT` and `GROUP BY` on large datasets are expensive.
-*   **Solution:** Implemented a Caching Layer in `services.py`.
-    *   Cache keys are deterministically generated using an MD5 hash of the sorted filter parameters.
-    *   Heavy aggregation results are cached for **15 minutes**.
-    *   This reduces API response time from ~200ms (uncached) to <10ms (cached).
+*   **Problem:** Analytics queries with `COUNT` and `GROUP BY` on 10,000+ records are expensive.
+*   **Solution:** MD5-hashed cache keys based on filter parameters with 15-minute TTL.
+*   **Impact:** Response time reduced from ~200ms (uncached) to <10ms (cached).
 
-### 4. Authentication & Security (JWT)
-*   **Context:** The Job Description requested `SimpleJWT`, but the Assessment Requirements focused on public analytics data.
-*   **Decision:** I have fully configured `rest_framework_simplejwt`.
-    *   JWT Endpoints exist at `/api/token/`.
-    *   **Note:** To make the assessment easier to review/test, the Views are currently set to `AllowAny`. In a production environment, I would switch the permission class to `IsAuthenticated`.
+### 3. Security & Validation
+*   **Input Validation:** Typed `AnalyticsFilterSerializer` validates all fields and prevents SQL/Logic injection.
+*   **Authentication:** JWT configured via `rest_framework_simplejwt` (currently set to `AllowAny` for easy testing, would be `IsAuthenticated` in production).
+*   **API Security:** JWT endpoints available at `/api/token/` and `/api/token/refresh/`.
 
-
-### 5. Infrastructure Strategy
-*   **Development:** The database is containerized via Docker Compose for rapid setup and reproducibility. Data persistence is handled via Docker Volumes.
-*   **Production:** In a real-world deployment, I would **decouple** the database from the Docker cluster. I would utilize a managed service (e.g., **AWS RDS for PostgreSQL** or **Azure Database**) to ensure automated backups, high availability, and independent scaling.
----
-
-## 🏗 Refactoring & Design Decisions
-
-Based on feedback, I performed a significant refactor to prioritize **Readability, Standardization, and Security**.
-
-### 1. Simplification ("Problem Solver" Approach)
-*   **Removed Complexity:** I replaced the custom Recursive Query Builder with a standard, explicit service layer. This significantly improves code readability and maintainability for the team.
-*   **Auto-Granularity:** Instead of relying on user input for time-series granularity (which risks performance issues), the system now **auto-calculates** the optimal period (Day/Week/Month) based on the date range.
-
-### 2. Security & Validation
-*   **Strict Serialization:** Replaced generic dictionary inputs with a typed `AnalyticsFilterSerializer`. This validates every field (`year`, `country_codes`) and prevents Logic/SQL Injection.
-*   **Schema Normalization:** Migrated from raw string storage to a relational `Country` model (Foreign Key) to ensure Data Integrity (3NF).
-
-### 3. Performance
-*   **Indexing:** Added Composite Indexes `(timestamp)` and `(blog, timestamp)` to the `BlogView` model.
-*   **Redis Caching:** Heavy aggregation results are cached for 15 minutes. Cache keys are deterministically generated based on the filter payload.
+### 4. Infrastructure
+*   **Development:** Fully containerized with Docker Compose for reproducibility. PostgreSQL 15 + Redis 7.
+*   **Production Ready:** In production, I would use managed database services (AWS RDS/Azure Database) for automated backups, high availability, and independent scaling.
 
 
 ## 🛠 Tech Stack

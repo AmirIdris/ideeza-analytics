@@ -32,13 +32,10 @@ class AnalyticsFilterSerializer(serializers.Serializer):
         required=False,
         help_text="List of country codes to EXCLUDE (NOT logic)"
     )
-
+    
     def validate(self, data):
         # Convert 'range' to start_date/end_date
         if 'range' in data:
-            from django.utils import timezone
-            from datetime import timedelta
-            
             now = timezone.now()
             if data['range'] == 'day':
                 data['start_date'] = now - timedelta(days=1)
