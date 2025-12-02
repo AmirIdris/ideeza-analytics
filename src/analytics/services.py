@@ -9,7 +9,7 @@ from django.db.models.functions import TruncMonth, TruncWeek, TruncDay, TruncYea
 from django.conf import settings
 from django.utils import timezone 
 
-from .models import BlogView
+from .models import BlogView, DailyAnalyticsSummary
 
 
 logger = logging.getLogger(__name__)
@@ -187,3 +187,65 @@ class AnalyticsService:
 
         cache.set(cache_key, results, timeout=cls.CACHE_TIMEOUT)
         return results
+
+    # =========================================================================
+    # PROBLEM SOLVER APPROACH: Pre-calculated Analytics
+    # =========================================================================
+    # Instead of querying 10,000+ raw events on every API call,
+    # we query pre-calculated daily summaries (~365 rows per year).
+    # 
+    # Benefits:
+    # - No complex filtering at query time
+    # - O(days) instead of O(events) query complexity
+    # - Simple aggregations (just SUM the pre-calculated values)
+    #
+    # Usage: Run `python manage.py precalculate_stats` to populate summaries
+    # =========================================================================
+
+    @classmethod
+    def get_grouped_analytics_fast(cls, object_type: str, filters: Dict) -> List[Dict]:
+        """
+        API #1 using PRE-CALCULATED data.
+        
+        Instead of: SELECT COUNT(*) FROM blogview WHERE ... GROUP BY country
+        We do:      SELECT SUM(total_views) FROM daily_summary GROUP BY country
+        
+        Query complexity: O(365 rows) instead of O(10,000 events)
+        """
+        from django.db.models import Sum
+        
+        cache_key = cls._generate_cache_key("grouped_fast", type=object_type, filters=filters)
+        cached_result = cache.get(cache_key)
+        if cached_result:
+            return cached_result
+
+        queryset = DailyAnalyticsSummary.objects.all()
+        
+        # Simple date filtering on summary table
+        if year := filters.get('year'):
+            queryset = queryset.filter(date__year=year)
+        if start_date := filters.get('start_date'):
+            queryset = queryset.filter(date__gte=start_date)
+        if end_date := filters.get('end_date'):
+            queryset = queryset.filter(date__lte=end_date)
+        if country_codes := filters.get('country_codes'):
+            queryset = queryset.filter(country__code__in=country_codes)
+        if exclude_codes := filters.get('exclude_country_codes'):
+            queryset = queryset.exclude(country__code__in=exclude_codes)
+        if author := filters.get('author_username'):
+            queryset = queryset.filter(author__username=author)
+        
+        # Group by country or author - just SUM pre-calculated values
+        if object_type == 'country':
+            data = list(queryset.values(x=F('country__code')).annotate(
+                y=Sum('unique_blogs'),
+                z=Sum('total_views')
+            ).order_by('-z'))
+        else:  # user
+            data = list(queryset.values(x=F('author__username')).annotate(
+                y=Sum('unique_blogs'),
+                z=Sum('total_views')
+            ).order_by('-z'))
+        
+        cache.set(cache_key, data, timeout=cls.CACHE_TIMEOUT)
+        return data

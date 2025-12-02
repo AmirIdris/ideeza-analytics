@@ -1,4 +1,4 @@
-.PHONY: build up down seed test logs
+.PHONY: build up down seed test logs precalc
 
 build:
 	docker-compose build
@@ -23,3 +23,6 @@ test:
 
 shell:
 	docker-compose exec web python manage.py shell
+
+precalc:
+	docker-compose exec web python manage.py precalculate_stats

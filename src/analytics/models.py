@@ -54,3 +54,34 @@ class BlogView(models.Model):
 
     def __str__(self):
         return f"{self.blog.title} viewed from {self.country}"
+
+
+class DailyAnalyticsSummary(models.Model):
+    """
+    Pre-calculated daily aggregates for O(1) analytics queries.
+    
+    PROBLEM SOLVER APPROACH:
+    Instead of querying 10,000+ raw BlogView events and filtering on every API call,
+    we pre-calculate daily statistics. This reduces query complexity from O(n) to O(days).
+    
+    Example: 1 year of data = 365 rows instead of 10,000+ events.
+    """
+    date = models.DateField(db_index=True)
+    country = models.ForeignKey(Country, on_delete=models.CASCADE, null=True, blank=True)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    # Pre-calculated metrics (no need to COUNT at query time)
+    total_views = models.IntegerField(default=0)
+    unique_blogs = models.IntegerField(default=0)
+    
+    class Meta:
+        unique_together = ['date', 'country', 'author']
+        indexes = [
+            models.Index(fields=['date', 'country']),
+            models.Index(fields=['date', 'author']),
+        ]
+        verbose_name = "Daily Analytics Summary"
+        verbose_name_plural = "Daily Analytics Summaries"
+
+    def __str__(self):
+        return f"{self.date} | {self.country} | {self.author} | {self.total_views} views"
