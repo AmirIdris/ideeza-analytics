@@ -35,9 +35,11 @@ class BaseAnalyticsView(APIView):
 
 class GroupedAnalyticsView(BaseAnalyticsView):
     """
-    Group views by country or user.
+    Group views by country or user (using pre-calculated data).
     
     POST /api/analytics/blog-views/{object_type}/
+    
+    Note: Requires pre-calculated summaries. Run `python manage.py precalculate_stats` first.
     
     Args:
         object_type: 'country' or 'user'
@@ -47,7 +49,7 @@ class GroupedAnalyticsView(BaseAnalyticsView):
     """
     
     @swagger_auto_schema(
-        operation_description="Group views by country or user",
+        operation_description="Group views by country or user (fast - uses pre-calculated data). Requires precalculate_stats to be run first.",
         request_body=AnalyticsFilterSerializer,
         responses={200: "List of {x, y, z} objects"}
     )
@@ -61,7 +63,7 @@ class GroupedAnalyticsView(BaseAnalyticsView):
         serializer = AnalyticsFilterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        data = AnalyticsService.get_grouped_analytics(
+        data = AnalyticsService.get_grouped_analytics_fast(
             object_type=object_type,
             filters=serializer.validated_data
         )

@@ -16,7 +16,7 @@ docker-compose exec web python manage.py migrate
 # 3. Generate test data (10,000+ records)
 docker-compose exec web python manage.py seed_data
 
-# 4. Pre-calculate analytics (optional - improves performance)
+# 4. Pre-calculate analytics summaries (REQUIRED for fast API)
 docker-compose exec web python manage.py precalculate_stats
 ```
 
@@ -32,6 +32,8 @@ docker-compose exec web python manage.py precalculate_stats
 
 ### 1. Grouped Analytics
 `POST /api/analytics/blog-views/{country|user}/`
+
+> **⚠️ IMPORTANT:** This endpoint uses pre-calculated data. You **MUST** run `precalculate_stats` first, otherwise it will return empty results.
 
 ```bash
 curl -X POST http://localhost:8000/api/analytics/blog-views/country/ \
@@ -103,14 +105,16 @@ Analytics queries on 10,000+ raw events are expensive and require complex filter
 ### The Solution
 **Pre-calculate daily summaries** → Query ~365 rows instead of 10,000.
 
+**API #1 uses the fast pre-calculated approach.** You **MUST** run precalc before testing:
+
 ```bash
 docker-compose exec web python manage.py precalculate_stats
 ```
 
 | Approach | Query Time | Use Case |
 |----------|------------|----------|
-| Real-time | ~50-200ms | Fresh data |
-| Pre-calculated | ~5-10ms | Dashboards |
+| Pre-calculated (API #1) | ~5-10ms | **Current implementation** |
+| Real-time (not used) | ~50-200ms | Would require code changes |
 
 ---
 
