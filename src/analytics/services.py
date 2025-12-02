@@ -10,7 +10,7 @@ import logging
 from typing import List, Dict
 
 from django.core.cache import cache
-from django.db.models import Count, F, Sum, Min, Max
+from django.db.models import Count, F, Q, Sum, Min, Max
 from django.db.models.functions import TruncMonth, TruncWeek, TruncDay
 from django.utils import timezone
 
@@ -39,9 +39,48 @@ class AnalyticsService:
         return f"analytics:{prefix}:{hashlib.md5(payload.encode()).hexdigest()}"
 
     @classmethod
+    def _build_blogview_filters(cls, filters: Dict) -> Q:
+        """
+        Build declarative Q object for BlogView queries.
+        
+        Note: This is separate from _build_summary_filters() because:
+        - BlogView uses 'timestamp' field (DateTimeField)
+        - DailyAnalyticsSummary uses 'date' field (DateField)
+        - Different field names require different Q object construction
+        
+        PROBLEM SOLVER APPROACH:
+        Instead of complex conditional filtering chains, we build a declarative
+        query object that clearly expresses the filtering logic.
+        """
+        q_objects = Q()
+        
+        # Date filters (mutually exclusive: year OR date range)
+        if year := filters.get('year'):
+            q_objects &= Q(timestamp__year=year)
+        else:
+            if start_date := filters.get('start_date'):
+                q_objects &= Q(timestamp__gte=start_date)
+            if end_date := filters.get('end_date'):
+                q_objects &= Q(timestamp__lte=end_date)
+        
+        # Country filters
+        if country_codes := filters.get('country_codes'):
+            q_objects &= Q(country__code__in=country_codes)
+        if exclude_codes := filters.get('exclude_country_codes'):
+            q_objects &= ~Q(country__code__in=exclude_codes)
+        
+        # Author and blog filters
+        if author := filters.get('author_username'):
+            q_objects &= Q(blog__author__username=author)
+        if blog_id := filters.get('blog_id'):
+            q_objects &= Q(blog_id=blog_id)
+        
+        return q_objects
+
+    @classmethod
     def _apply_filters(cls, queryset, filters: Dict):
         """
-        Apply filters to BlogView queryset.
+        Apply filters to BlogView queryset using declarative Q objects.
         
         Supports:
             - year, start_date, end_date (time filters)
@@ -49,22 +88,8 @@ class AnalyticsService:
             - exclude_country_codes (NOT logic)
             - author_username, blog_id (exact match)
         """
-        if filters.get('year'):
-            queryset = queryset.filter(timestamp__year=filters['year'])
-        if filters.get('start_date'):
-            queryset = queryset.filter(timestamp__gte=filters['start_date'])
-        if filters.get('end_date'):
-            queryset = queryset.filter(timestamp__lte=filters['end_date'])
-        if filters.get('country_codes'):
-            queryset = queryset.filter(country__code__in=filters['country_codes'])
-        if filters.get('author_username'):
-            queryset = queryset.filter(blog__author__username=filters['author_username'])
-        if filters.get('blog_id'):
-            queryset = queryset.filter(blog_id=filters['blog_id'])
-        if filters.get('exclude_country_codes'):
-            queryset = queryset.exclude(country__code__in=filters['exclude_country_codes'])
-        
-        return queryset
+        query_filters = cls._build_blogview_filters(filters)
+        return queryset.filter(query_filters)
 
     @classmethod
     def get_grouped_analytics(cls, object_type: str, filters: Dict) -> List[Dict]:
@@ -118,6 +143,8 @@ class AnalyticsService:
         queryset = BlogView.objects.select_related('blog', 'blog__author', 'country')
         queryset = cls._apply_filters(queryset, filters)
 
+        # Configuration dict: maps top_type to (grouping_field, z_metric)
+        # This avoids repetitive if/elif chains and makes it easy to add new types
         config = {
             'blog': ('blog__title', Count('country', distinct=True)),
             'user': ('blog__author__username', Count('blog', distinct=True)),
@@ -179,12 +206,29 @@ class AnalyticsService:
             .order_by('period')
         )
 
-        # Calculate growth percentage
+        # Calculate growth percentage for each period
+        results = cls._calculate_growth_periods(raw_data)
+
+        cache.set(cache_key, results, timeout=cls.CACHE_TIMEOUT)
+        return results
+
+    @classmethod
+    def _calculate_growth_periods(cls, raw_data) -> List[Dict]:
+        """
+        Calculate growth percentage for time-series data.
+        
+        Args:
+            raw_data: QuerySet results with 'period', 'views', 'blogs'
+            
+        Returns:
+            List of {x: "date (N blogs)", y: views, z: growth_percent}
+        """
         results = []
         prev_views = 0
 
         for entry in raw_data:
             views = entry['views']
+            # Calculate growth: ((current - previous) / previous) * 100
             growth = ((views - prev_views) / prev_views * 100) if prev_views > 0 else 0.0
             
             results.append({
@@ -193,44 +237,73 @@ class AnalyticsService:
                 "z": round(growth, 2),
             })
             prev_views = views
-
-        cache.set(cache_key, results, timeout=cls.CACHE_TIMEOUT)
+        
         return results
+
+    @classmethod
+    def _build_summary_filters(cls, filters: Dict) -> Q:
+        """
+        Build declarative Q object for pre-calculated summary queries.
+        
+        PROBLEM SOLVER APPROACH:
+        Instead of complex conditional filtering, we build a declarative query
+        that leverages the pre-calculated data structure. This eliminates
+        the need for complex filtering logic at query time.
+        """
+        q_objects = Q()
+        
+        # Date filters (mutually exclusive: year OR date range)
+        if year := filters.get('year'):
+            q_objects &= Q(date__year=year)
+        else:
+            # Handle both datetime and date objects
+            if start_date := filters.get('start_date'):
+                start_date_value = start_date.date() if hasattr(start_date, 'date') else start_date
+                q_objects &= Q(date__gte=start_date_value)
+            if end_date := filters.get('end_date'):
+                end_date_value = end_date.date() if hasattr(end_date, 'date') else end_date
+                q_objects &= Q(date__lte=end_date_value)
+        
+        # Country filters
+        if country_codes := filters.get('country_codes'):
+            q_objects &= Q(country__code__in=country_codes)
+        if exclude_codes := filters.get('exclude_country_codes'):
+            q_objects &= ~Q(country__code__in=exclude_codes)
+        
+        # Author filter
+        if author := filters.get('author_username'):
+            q_objects &= Q(author__username=author)
+        
+        return q_objects
 
     @classmethod
     def get_grouped_analytics_fast(cls, object_type: str, filters: Dict) -> List[Dict]:
         """
-        API #1 using pre-calculated data (faster for large datasets).
+        API #1 using pre-calculated data - Problem Solver Approach.
+        
+        Instead of complex filtering on raw events, we:
+        1. Query pre-calculated summaries (already aggregated)
+        2. Apply simple declarative filters using Q objects
+        3. Just SUM the pre-calculated values (no complex calculations)
         
         Requires: Run `python manage.py precalculate_stats` first.
         
         Performance: O(365 rows) instead of O(10,000 events)
+        Query complexity: Simple SUM aggregation, no complex WHERE clauses
         """
         cache_key = cls._generate_cache_key("grouped_fast", type=object_type, filters=filters)
         
         if cached := cache.get(cache_key):
             return cached
 
-        queryset = DailyAnalyticsSummary.objects.all()
-        
-        # Apply filters
-        if filters.get('year'):
-            queryset = queryset.filter(date__year=filters['year'])
-        if filters.get('start_date'):
-            queryset = queryset.filter(date__gte=filters['start_date'])
-        if filters.get('end_date'):
-            queryset = queryset.filter(date__lte=filters['end_date'])
-        if filters.get('country_codes'):
-            queryset = queryset.filter(country__code__in=filters['country_codes'])
-        if filters.get('exclude_country_codes'):
-            queryset = queryset.exclude(country__code__in=filters['exclude_country_codes'])
-        if filters.get('author_username'):
-            queryset = queryset.filter(author__username=filters['author_username'])
-
+        # Build declarative query - no complex conditional logic
+        query_filters = cls._build_summary_filters(filters)
         group_field = 'country__code' if object_type == 'country' else 'author__username'
         
+        # Simple aggregation on pre-calculated data
         data = list(
-            queryset
+            DailyAnalyticsSummary.objects
+            .filter(query_filters)
             .values(x=F(group_field))
             .annotate(y=Sum('unique_blogs'), z=Sum('total_views'))
             .order_by('-z')
