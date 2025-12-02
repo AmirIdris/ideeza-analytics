@@ -93,6 +93,18 @@ class AnalyticsFilterSerializer(serializers.Serializer):
         If 'range' is provided, it overrides any existing start_date/end_date.
         The 'range' key is kept in data for cache key generation.
         """
+        # Validate empty lists
+        if 'country_codes' in data and data['country_codes'] == []:
+            raise serializers.ValidationError({
+                'country_codes': 'Cannot be an empty list. Omit the field or provide at least one country code.'
+            })
+        
+        if 'exclude_country_codes' in data and data['exclude_country_codes'] == []:
+            raise serializers.ValidationError({
+                'exclude_country_codes': 'Cannot be an empty list. Omit the field or provide at least one country code.'
+            })
+        
+        # Convert range to dates
         if 'range' in data and data['range']:
             now = timezone.now()
             days = RANGE_DAYS.get(data['range'])

@@ -7,6 +7,7 @@ Provides both real-time and pre-calculated query methods.
 import hashlib
 import json
 import logging
+from datetime import datetime, date
 from typing import List, Dict
 
 from django.core.cache import cache
@@ -184,11 +185,26 @@ class AnalyticsService:
         queryset = BlogView.objects.select_related('blog', 'blog__author', 'country')
         queryset = cls._apply_filters(queryset, filters)
 
+        # Check if queryset has data
+        if not queryset.exists():
+            logger.info("No BlogView data found for performance analytics. Returning empty results.")
+            return []
+
         # Determine time granularity
         date_range = queryset.aggregate(min=Min('timestamp'), max=Max('timestamp'))
-        min_date = date_range['min'] or timezone.now()
-        max_date = date_range['max'] or timezone.now()
+        min_date = date_range['min']
+        max_date = date_range['max']
+        
+        # Handle edge case where min/max might be None
+        if not min_date or not max_date:
+            logger.warning("Invalid date range in performance analytics. Returning empty results.")
+            return []
+        
         days = (max_date - min_date).days
+        
+        # Handle edge case where days is 0 or negative
+        if days <= 0:
+            days = 1  # Default to daily granularity
 
         if days > 365:
             trunc_func = TruncMonth('timestamp')
@@ -258,10 +274,10 @@ class AnalyticsService:
         else:
             # Handle both datetime and date objects
             if start_date := filters.get('start_date'):
-                start_date_value = start_date.date() if hasattr(start_date, 'date') else start_date
+                start_date_value = start_date.date() if isinstance(start_date, datetime) else start_date
                 q_objects &= Q(date__gte=start_date_value)
             if end_date := filters.get('end_date'):
-                end_date_value = end_date.date() if hasattr(end_date, 'date') else end_date
+                end_date_value = end_date.date() if isinstance(end_date, datetime) else end_date
                 q_objects &= Q(date__lte=end_date_value)
         
         # Country filters
@@ -296,14 +312,29 @@ class AnalyticsService:
         if cached := cache.get(cache_key):
             return cached
 
+        # Check if pre-calculated data exists
+        if not DailyAnalyticsSummary.objects.exists():
+            logger.warning(
+                "No pre-calculated summaries found. "
+                "Run 'python manage.py precalculate_stats' first. "
+                "Returning empty results."
+            )
+            return []
+
         # Build declarative query - no complex conditional logic
         query_filters = cls._build_summary_filters(filters)
         group_field = 'country__code' if object_type == 'country' else 'author__username'
+        
+        # Filter out null values to avoid grouping issues
+        # When grouping by country, exclude null countries
+        # When grouping by author, exclude null authors
+        null_filter = {f'{group_field}__isnull': False}
         
         # Simple aggregation on pre-calculated data
         data = list(
             DailyAnalyticsSummary.objects
             .filter(query_filters)
+            .filter(**null_filter)
             .values(x=F(group_field))
             .annotate(y=Sum('unique_blogs'), z=Sum('total_views'))
             .order_by('-z')
