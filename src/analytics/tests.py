@@ -4,7 +4,8 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from analytics.models import Country, Blog, BlogView
 from analytics.services import AnalyticsService
-
+from django.test.utils import CaptureQueriesContext
+from django.db import connection
 class AnalyticsAPITest(TestCase):
     def setUp(self):
         # Create test data
@@ -77,3 +78,12 @@ class AnalyticsAPITest(TestCase):
             format='json'
         )
         self.assertEqual(response.status_code, 200)
+
+    def test_no_n_plus_1_queries(self):
+    """Ensure efficient queries"""
+    
+    with CaptureQueriesContext(connection) as context:
+        AnalyticsService.get_grouped_analytics('country', {})
+    
+    # Should be minimal queries, not N per record
+    self.assertLess(len(context.captured_queries), 5)

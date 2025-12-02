@@ -178,10 +178,10 @@ class AnalyticsService:
             date_label = entry['period_label'].strftime("%Y-%m-%d")
             
             results.append({
-    "x": f"{date_label} ({entry['unique_blogs']} blogs)",  # Include blog count
-    "y": views,
-    "z": round(growth, 2),
-})
+                "x": f"{date_label} ({entry['unique_blogs']} blogs)",
+                "y": views,
+                "z": round(growth, 2),
+            })
             
             prev_views = views
 
