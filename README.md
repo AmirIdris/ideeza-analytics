@@ -126,6 +126,16 @@ docker-compose exec web python manage.py precalculate_stats
 | Pre-calculated (API #1) | ~5-10ms | **Current implementation** |
 | Real-time (not used) | ~50-200ms | Would require code changes |
 
+### Production Scaling
+
+For production environments with large datasets:
+
+**1. Scheduled Updates (Recommended)**
+```bash
+# Run daily at 2 AM via cron or Celery Beat
+0 2 * * * docker-compose exec web python manage.py precalculate_stats --days 1
+```
+
 ---
 
 ## Architecture
