@@ -4,6 +4,18 @@ Senior Backend Developer Assessment - Django Analytics API with PostgreSQL and R
 
 ---
 
+## ⚠️ IMPORTANT: Database Reset Required
+
+**The database schema has been updated.** If you have an existing database, you **MUST** reset it first:
+
+```bash
+docker-compose down -v
+```
+
+This will drop all volumes (including the database). Then proceed with the Quick Start steps below.
+
+---
+
 ## Quick Start
 
 ```bash
@@ -23,8 +35,6 @@ docker-compose exec web python manage.py precalculate_stats
 **Access:**
 - Swagger: http://localhost:8000/swagger/
 - Admin: http://localhost:8000/admin/
-
-> **Reset database:** `docker-compose down -v` then start again
 
 ---
 
