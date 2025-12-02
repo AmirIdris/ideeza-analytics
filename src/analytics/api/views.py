@@ -1,57 +1,133 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
+"""
+Analytics API Views
+
+Endpoints:
+    POST /api/analytics/blog-views/{object_type}/ - Grouped analytics
+    POST /api/analytics/top/{top_type}/ - Top 10
+    POST /api/analytics/performance/ - Time-series performance
+"""
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
 
 from analytics.services import AnalyticsService
-from analytics.api.serializers import  AnalyticsResponseSerializer, AnalyticsFilterSerializer
+from analytics.api.serializers import AnalyticsFilterSerializer
+
+
+# Constants for validation
+VALID_OBJECT_TYPES = ['country', 'user']
+VALID_TOP_TYPES = ['blog', 'user', 'country']
+
 
 class BaseAnalyticsView(APIView):
     """
-    Base view to handle common Auth and Permission settings.
+    Base view with common authentication settings.
+    
+    Note: Set permission_classes to [IsAuthenticated] in production.
     """
     authentication_classes = [JWTAuthentication]
-    # We set AllowAny for the assessment to make it easy to test, 
-    # but in a real app, this would be [IsAuthenticated].
-    permission_classes = [AllowAny] 
+    permission_classes = [AllowAny]
+
 
 class GroupedAnalyticsView(BaseAnalyticsView):
+    """
+    Group views by country or user.
     
-    @swagger_auto_schema(request_body=AnalyticsFilterSerializer)
+    POST /api/analytics/blog-views/{object_type}/
+    
+    Args:
+        object_type: 'country' or 'user'
+        
+    Returns:
+        List of {x: grouping_key, y: unique_blogs, z: total_views}
+    """
+    
+    @swagger_auto_schema(
+        operation_description="Group views by country or user",
+        request_body=AnalyticsFilterSerializer,
+        responses={200: "List of {x, y, z} objects"}
+    )
     def post(self, request, object_type):
+        if object_type not in VALID_OBJECT_TYPES:
+            return Response(
+                {"error": f"object_type must be one of: {', '.join(VALID_OBJECT_TYPES)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         serializer = AnalyticsFilterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        if object_type not in ['country', 'user']:
-            return Response({"error": "Invalid object_type"}, status=status.HTTP_400_BAD_REQUEST)
-        data = AnalyticsService.get_grouped_analytics(object_type, serializer.validated_data)
+        
+        data = AnalyticsService.get_grouped_analytics(
+            object_type=object_type,
+            filters=serializer.validated_data
+        )
         return Response(data, status=status.HTTP_200_OK)
 
 
 class TopAnalyticsView(BaseAnalyticsView):
-
-    @swagger_auto_schema(request_body=AnalyticsFilterSerializer)
+    """
+    Get top 10 by total views.
+    
+    POST /api/analytics/top/{top_type}/
+    
+    Args:
+        top_type: 'blog', 'user', or 'country'
+        
+    Returns:
+        List of {x: name, y: total_views, z: unique_count} (max 10 items)
+    """
+    
+    @swagger_auto_schema(
+        operation_description="Get top 10 blogs, users, or countries by views",
+        request_body=AnalyticsFilterSerializer,
+        responses={200: "List of {x, y, z} objects (max 10)"}
+    )
     def post(self, request, top_type):
+        if top_type not in VALID_TOP_TYPES:
+            return Response(
+                {"error": f"top_type must be one of: {', '.join(VALID_TOP_TYPES)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         serializer = AnalyticsFilterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        if top_type not in ['blog', 'country', 'user']:
-            return Response({"error": "Invalid top_type"}, status=status.HTTP_400_BAD_REQUEST)
-
-        data = AnalyticsService.get_top_analytics(top_type, serializer.validated_data)
+        
+        data = AnalyticsService.get_top_analytics(
+            top_type=top_type,
+            filters=serializer.validated_data
+        )
         return Response(data, status=status.HTTP_200_OK)
 
 
 class PerformanceAnalyticsView(BaseAnalyticsView):
-
+    """
+    Time-series performance with growth calculation.
+    
+    POST /api/analytics/performance/
+    
+    Granularity is auto-calculated based on date range:
+        - >365 days: Monthly
+        - >30 days: Weekly
+        - <=30 days: Daily
+        
+    Returns:
+        List of {x: "date (N blogs)", y: views, z: growth_percent}
+    """
+    
     @swagger_auto_schema(
-        operation_description="Granularity is auto-calculated",
-        request_body=AnalyticsFilterSerializer
+        operation_description="Time-series performance (granularity auto-calculated)",
+        request_body=AnalyticsFilterSerializer,
+        responses={200: "List of {x, y, z} objects with growth percentages"}
     )
     def post(self, request):
         serializer = AnalyticsFilterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = AnalyticsService.get_performance_analytics(serializer.validated_data)
+        
+        data = AnalyticsService.get_performance_analytics(
+            filters=serializer.validated_data
+        )
         return Response(data, status=status.HTTP_200_OK)

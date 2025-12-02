@@ -1,87 +1,181 @@
-from django.db import models
+"""
+Analytics Models
+
+Database schema for analytics system:
+    - Country: Reference table for countries
+    - Blog: Blog posts authored by users
+    - BlogView: Fact table storing each view event
+    - DailyAnalyticsSummary: Pre-calculated daily aggregates
+"""
 from django.contrib.auth.models import User
-from django.utils.translation import gettext_lazy as _
-
-# Create your models here.
-
+from django.db import models
 
 
 class Country(models.Model):
-    name = models.CharField(max_length=100)
-    code = models.CharField(max_length=5, unique=True, db_index=True)
+    """
+    Country reference table.
+    
+    Normalized country data to avoid storing raw strings in BlogView.
+    """
+    name = models.CharField(max_length=100, help_text="Full country name")
+    code = models.CharField(
+        max_length=5,
+        unique=True,
+        db_index=True,
+        help_text="ISO country code (e.g., 'US', 'UK')"
+    )
+
+    class Meta:
+        verbose_name = "Country"
+        verbose_name_plural = "Countries"
+        ordering = ['code']
 
     def __str__(self):
-        return self.code
-
+        return self.code or "Unknown"
 
 
 class Blog(models.Model):
-    title = models.CharField(max_length=255)
-    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='blogs')
-    content = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return self.title
-        
-
-class BlogView(models.Model):
     """
-    Fact Table for Analytics.
-    Stores every single view event.
+    Blog post model.
+    
+    Each blog is authored by a User and can have multiple views.
     """
-    blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='views')
-    
-    # NORMALIZED: Linking to Country table instead of storing raw string
-    country = models.ForeignKey(Country, on_delete=models.SET_NULL, null=True, related_name='views')
-    
-    # IP is useful for uniqueness checks, though not strictly required by the prompt's x,y,z
-    ip_address = models.GenericIPAddressField(null=True, blank=True)
-    
-    # Optional: If a registered user viewed it
-    viewer = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='viewed_blogs')
-    
-    timestamp = models.DateTimeField(auto_now_add=True)
+    title = models.CharField(max_length=255, help_text="Blog post title")
+    author = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='blogs',
+        help_text="Author of the blog post"
+    )
+    content = models.TextField(help_text="Blog post content")
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        help_text="When the blog was created"
+    )
 
     class Meta:
-        ordering = ['-timestamp']
+        ordering = ['-created_at']
         indexes = [
-            # Compound Index: Speed up filtering by time AND country (Very common query)
-            models.Index(fields=['timestamp', 'country']),
-            # Speed up "How many views did this blog get?"
-            models.Index(fields=['blog', 'timestamp']),
+            models.Index(fields=['author', 'created_at']),
         ]
 
     def __str__(self):
-        return f"{self.blog.title} viewed from {self.country}"
+        return self.title
+
+
+class BlogView(models.Model):
+    """
+    View event - fact table for analytics.
+    
+    Each row represents one view of a blog post.
+    This is the primary data source for analytics queries.
+    
+    Indexed for efficient filtering by:
+        - Time range (timestamp)
+        - Country (country)
+        - Blog (blog)
+    """
+    blog = models.ForeignKey(
+        Blog,
+        on_delete=models.CASCADE,
+        related_name='views',
+        help_text="The blog post that was viewed"
+    )
+    country = models.ForeignKey(
+        Country,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='views',
+        help_text="Country where the view originated"
+    )
+    viewer = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='viewed_blogs',
+        help_text="Registered user who viewed (if logged in)"
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="IP address of the viewer"
+    )
+    timestamp = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        help_text="When the view occurred"
+    )
+
+    class Meta:
+        ordering = ['-timestamp']
+        verbose_name = "Blog View"
+        verbose_name_plural = "Blog Views"
+        indexes = [
+            models.Index(fields=['timestamp', 'country'], name='idx_timestamp_country'),
+            models.Index(fields=['blog', 'timestamp'], name='idx_blog_timestamp'),
+        ]
+
+    def __str__(self):
+        country_str = str(self.country) if self.country else "Unknown"
+        return f"{self.blog.title} viewed from {country_str}"
 
 
 class DailyAnalyticsSummary(models.Model):
     """
-    Pre-calculated daily aggregates for O(1) analytics queries.
+    Pre-calculated daily analytics summaries.
     
     PROBLEM SOLVER APPROACH:
-    Instead of querying 10,000+ raw BlogView events and filtering on every API call,
-    we pre-calculate daily statistics. This reduces query complexity from O(n) to O(days).
+    Instead of querying 10,000+ BlogView events on every API call,
+    we pre-calculate daily aggregates. This reduces query complexity
+    from O(events) to O(days).
+    
+    Populate via: python manage.py precalculate_stats
     
     Example: 1 year of data = 365 rows instead of 10,000+ events.
     """
-    date = models.DateField(db_index=True)
-    country = models.ForeignKey(Country, on_delete=models.CASCADE, null=True, blank=True)
-    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    
-    # Pre-calculated metrics (no need to COUNT at query time)
-    total_views = models.IntegerField(default=0)
-    unique_blogs = models.IntegerField(default=0)
-    
+    date = models.DateField(
+        db_index=True,
+        help_text="Date of the summary"
+    )
+    country = models.ForeignKey(
+        Country,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='daily_summaries',
+        help_text="Country (null = all countries)"
+    )
+    author = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='daily_summaries',
+        help_text="Author (null = all authors)"
+    )
+    total_views = models.IntegerField(
+        default=0,
+        help_text="Total views for this date/country/author combination"
+    )
+    unique_blogs = models.IntegerField(
+        default=0,
+        help_text="Number of unique blogs viewed"
+    )
+
     class Meta:
         unique_together = ['date', 'country', 'author']
-        indexes = [
-            models.Index(fields=['date', 'country']),
-            models.Index(fields=['date', 'author']),
-        ]
         verbose_name = "Daily Analytics Summary"
         verbose_name_plural = "Daily Analytics Summaries"
+        indexes = [
+            models.Index(fields=['date', 'country'], name='idx_summary_date_country'),
+            models.Index(fields=['date', 'author'], name='idx_summary_date_author'),
+        ]
+        ordering = ['-date', 'country']
 
     def __str__(self):
-        return f"{self.date} | {self.country} | {self.author} | {self.total_views} views"
+        country_str = str(self.country) if self.country else "All"
+        author_str = self.author.username if self.author else "All"
+        return f"{self.date} | {country_str} | {author_str} | {self.total_views} views"

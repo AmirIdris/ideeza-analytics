@@ -1,55 +1,129 @@
-from rest_framework import serializers
-from django.utils import timezone
+"""
+Analytics API Serializers
+
+Handles request validation and response formatting for analytics endpoints.
+"""
 from datetime import timedelta
+
+from django.utils import timezone
+from rest_framework import serializers
+
+
+# Constants
+RANGE_CHOICES = ['day', 'week', 'month', 'year']
+RANGE_DAYS = {
+    'day': 1,
+    'week': 7,
+    'month': 30,
+    'year': 365,
+}
+YEAR_MIN = 2000
+YEAR_MAX = 2100
+COUNTRY_CODE_MAX_LENGTH = 5
+
+
 class AnalyticsFilterSerializer(serializers.Serializer):
     """
-    Explicit contract to prevent SQL/Logic Injection.
+    Filter parameters for analytics endpoints.
+    
+    Supports dynamic filtering with AND/OR/NOT logic:
+        - Time: range (quick), year, start_date, end_date
+        - Countries: country_codes (OR), exclude_country_codes (NOT)
+        - Authors: author_username (exact match)
+        - Blogs: blog_id (exact match)
+    
+    Example:
+        {
+            "year": 2025,
+            "country_codes": ["US", "UK"],
+            "exclude_country_codes": ["SPAM"]
+        }
     """
-
+    
+    # Quick date range shortcuts
     range = serializers.ChoiceField(
-        choices=['day', 'week', 'month', 'year'],
+        choices=RANGE_CHOICES,
         required=False,
-        help_text="Quick date range filter"
+        help_text="Quick date range: day, week, month, or year"
     )
-
-    # Date Range
-    start_date = serializers.DateTimeField(required=False)
-    end_date = serializers.DateTimeField(required=False)
-    year = serializers.IntegerField(required=False, min_value=2000, max_value=2100)
     
-    # Dimensions (Supports 'OR' Logic via Lists)
+    # Custom date range
+    start_date = serializers.DateTimeField(
+        required=False,
+        help_text="Start date (ISO format)"
+    )
+    end_date = serializers.DateTimeField(
+        required=False,
+        help_text="End date (ISO format)"
+    )
+    year = serializers.IntegerField(
+        required=False,
+        min_value=YEAR_MIN,
+        max_value=YEAR_MAX,
+        help_text=f"Filter by year ({YEAR_MIN}-{YEAR_MAX})"
+    )
+    
+    # Country filters (OR and NOT logic)
     country_codes = serializers.ListField(
-        child=serializers.CharField(max_length=5), 
+        child=serializers.CharField(max_length=COUNTRY_CODE_MAX_LENGTH),
         required=False,
-        help_text="List of country codes to include (OR logic)"
+        help_text="Include countries - matches ANY in list (OR logic)"
     )
-    author_username = serializers.CharField(required=False)
-    blog_id = serializers.IntegerField(required=False)
-
-    # Supports 'NOT' Logic (Requirement Requirement)
     exclude_country_codes = serializers.ListField(
-        child=serializers.CharField(max_length=5),
+        child=serializers.CharField(max_length=COUNTRY_CODE_MAX_LENGTH),
         required=False,
-        help_text="List of country codes to EXCLUDE (NOT logic)"
+        help_text="Exclude countries - excludes ALL in list (NOT logic)"
     )
     
+    # Other dimension filters
+    author_username = serializers.CharField(
+        required=False,
+        help_text="Filter by author username (exact match)"
+    )
+    blog_id = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text="Filter by specific blog ID"
+    )
+
     def validate(self, data):
-        # Convert 'range' to start_date/end_date
-        if 'range' in data:
+        """
+        Convert 'range' shortcut to start_date/end_date.
+        
+        If 'range' is provided, it overrides any existing start_date/end_date.
+        The 'range' key is kept in data for cache key generation.
+        """
+        if 'range' in data and data['range']:
             now = timezone.now()
-            if data['range'] == 'day':
-                data['start_date'] = now - timedelta(days=1)
-            elif data['range'] == 'week':
-                data['start_date'] = now - timedelta(weeks=1)
-            elif data['range'] == 'month':
-                data['start_date'] = now - timedelta(days=30)
-            elif data['range'] == 'year':
-                data['start_date'] = now - timedelta(days=365)
+            days = RANGE_DAYS.get(data['range'])
+            
+            if days is None:
+                raise serializers.ValidationError({
+                    'range': f"Invalid range. Must be one of: {', '.join(RANGE_CHOICES)}"
+                })
+            
+            # Override start_date/end_date if range is provided
+            data['start_date'] = now - timedelta(days=days)
             data['end_date'] = now
+        
         return data
 
 
 class AnalyticsResponseSerializer(serializers.Serializer):
-    x = serializers.CharField(help_text="Grouping Key")
-    y = serializers.IntegerField(help_text="Primary Metric")
-    z = serializers.FloatField(help_text="Secondary Metric")
+    """
+    Standard response format for all analytics endpoints.
+    
+    All endpoints return arrays of {x, y, z} objects:
+        - x: Grouping key (country code, username, or date)
+        - y: Primary metric (number of blogs or total views)
+        - z: Secondary metric (views, unique count, or growth %)
+    """
+    x = serializers.CharField(
+        help_text="Grouping key (country code, username, or date string)"
+    )
+    y = serializers.IntegerField(
+        help_text="Primary metric (unique blogs count or total views)"
+    )
+    z = serializers.FloatField(
+        help_text="Secondary metric (total views, unique count, or growth percentage)"
+    )
