@@ -7,17 +7,24 @@ Senior Backend Developer Assessment - Django Analytics API with PostgreSQL and R
 ## Quick Start
 
 ```bash
-make up          # Start Docker containers
-make migrate     # Apply database migrations
-make seed        # Generate 10,000+ test records
-make precalc     # Pre-calculate analytics summaries (optional)
+# 1. Start containers
+docker-compose up -d --build
+
+# 2. Apply migrations
+docker-compose exec web python manage.py migrate
+
+# 3. Generate test data (10,000+ records)
+docker-compose exec web python manage.py seed_data
+
+# 4. Pre-calculate analytics (optional - improves performance)
+docker-compose exec web python manage.py precalculate_stats
 ```
 
 **Access:**
 - Swagger: http://localhost:8000/swagger/
 - Admin: http://localhost:8000/admin/
 
-> **Note:** If you've run this before, reset with: `docker-compose down -v`
+> **Reset database:** `docker-compose down -v` then start again
 
 ---
 
@@ -97,7 +104,7 @@ Analytics queries on 10,000+ raw events are expensive and require complex filter
 **Pre-calculate daily summaries** → Query ~365 rows instead of 10,000.
 
 ```bash
-make precalc  # Creates DailyAnalyticsSummary records
+docker-compose exec web python manage.py precalculate_stats
 ```
 
 | Approach | Query Time | Use Case |
@@ -117,14 +124,15 @@ make precalc  # Creates DailyAnalyticsSummary records
 
 ## Commands
 
-```bash
-make up        # Start containers
-make migrate   # Apply migrations
-make seed      # Generate test data
-make precalc   # Pre-calculate summaries
-make test      # Run tests
-make logs      # View logs
-```
+| Action | Docker Command | Makefile (optional) |
+|--------|----------------|---------------------|
+| Start | `docker-compose up -d --build` | `make up` |
+| Migrate | `docker-compose exec web python manage.py migrate` | `make migrate` |
+| Seed data | `docker-compose exec web python manage.py seed_data` | `make seed` |
+| Pre-calculate | `docker-compose exec web python manage.py precalculate_stats` | `make precalc` |
+| Run tests | `docker-compose exec web python manage.py test` | `make test` |
+| View logs | `docker-compose logs -f` | `make logs` |
+| Stop | `docker-compose down` | `make down` |
 
 ---
 
